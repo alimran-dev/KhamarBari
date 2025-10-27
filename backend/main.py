@@ -11,7 +11,9 @@ app = FastAPI()
 
 
 class SignupRequest(BaseModel):
-    name: str
+    owner_name: str
+    farm_name: str
+    phone_number: str
     email: EmailStr
     password: str
 
@@ -27,7 +29,7 @@ def app_root():
 
 @app.post("/signup")
 def signup(request: SignupRequest):
-    """Signup endpoint that creates a new user with name and email"""
+    """Signup endpoint that creates a new user with owner_name, farm_name, phone_number, email and password"""
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -43,8 +45,8 @@ def signup(request: SignupRequest):
         
         # Insert new user
         cursor.execute(
-            "INSERT INTO users (name, email, password) VALUES (%s, %s, %s)",
-            (request.name, request.email, request.password)
+            "INSERT INTO users (owner_name, farm_name, phone_number, email, password) VALUES (%s, %s, %s, %s, %s)",
+            (request.owner_name, request.farm_name, request.phone_number, request.email, request.password)
         )
         conn.commit()
         
@@ -55,7 +57,9 @@ def signup(request: SignupRequest):
             "status": "success",
             "message": "User registered successfully",
             "data": {
-                "name": request.name,
+                "owner_name": request.owner_name,
+                "farm_name": request.farm_name,
+                "phone_number": request.phone_number,
                 "email": request.email
             }
         }
@@ -67,13 +71,13 @@ def signup(request: SignupRequest):
 
 @app.post("/login")
 def login(request: LoginRequest):
-    """Login endpoint that authenticates a user with email"""
+    """Login endpoint that authenticates a user with email and password"""
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
         # Check if user exists
-        cursor.execute("SELECT name, email, password FROM users WHERE email = %s", (request.email,))
+        cursor.execute("SELECT owner_name, farm_name, phone_number, email, password FROM users WHERE email = %s", (request.email,))
         user = cursor.fetchone()
         
         cursor.close()
@@ -81,15 +85,17 @@ def login(request: LoginRequest):
         
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        if user[2] != request.password:
+        if user[4] != request.password:
             raise HTTPException(status_code=401, detail="Invalid password")
         
         return {
             "status": "success",
             "message": "Login successful",
             "data": {
-                "name": user[0],
-                "email": user[1]
+                "owner_name": user[0],
+                "farm_name": user[1],
+                "phone_number": user[2],
+                "email": user[3]
             }
         }
     except HTTPException:
