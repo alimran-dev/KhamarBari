@@ -2,7 +2,7 @@ from PyQt5 import QtWidgets, QtCore
 import sys
 from login import LoginPage
 from signup import SignupPage
-from dashboard import DashboardPage
+from dash_raw import DashboardPage
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
