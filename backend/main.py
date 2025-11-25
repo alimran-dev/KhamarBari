@@ -40,6 +40,28 @@ class CattleArchiveRequest(BaseModel):
     tag_number: str
     is_archived: bool
 
+
+class OrderItemRequest(BaseModel):
+    product_type: str
+    quantity: float
+    unit: str
+    price_per_unit: float = 0.0
+    notes: str = None
+
+
+class OrderRequest(BaseModel):
+    customer_name: str
+    customer_email: str = None
+    customer_phone: str = None
+    items: list[OrderItemRequest]
+    delivery_date: str = None
+    notes: str = None
+
+
+class OrderStatusUpdate(BaseModel):
+    status: str
+
+
 @app.get("/")
 def app_root():
     return {"status": "ok", "message": "Server is running"}
@@ -571,6 +593,269 @@ def get_production_summary():
                 "other": total_other,
                 "date": today
             }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ===================== ORDER ENDPOINTS =====================
+
+@app.post("/orders")
+def create_order(request: OrderRequest):
+    """Create a new order"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Generate order ID
+        order_id = f"ORD-{random.randint(10000, 99999):05d}"
+        
+        # Calculate total amount (quantity * price_per_unit for each item)
+        total_amount = sum(item.quantity * item.price_per_unit for item in request.items)
+        
+        # Insert order
+        cursor.execute(
+            """INSERT INTO orders 
+               (order_id, customer_name, customer_email, customer_phone, total_amount, delivery_date, notes, status) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'Pending')""",
+            (order_id, request.customer_name, request.customer_email, request.customer_phone, 
+             total_amount, request.delivery_date, request.notes)
+        )
+        
+        # Insert order items with price
+        for item in request.items:
+            cursor.execute(
+                """INSERT INTO order_items 
+                   (order_id, product_type, quantity, unit, price_per_unit, notes) 
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (order_id, item.product_type, item.quantity, item.unit, item.price_per_unit, item.notes)
+            )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Order created successfully",
+            "data": {
+                "order_id": order_id,
+                "customer_name": request.customer_name,
+                "total_amount": total_amount
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/orders")
+def get_orders(
+    status: str = None,
+    search: str = None,
+    product_type: str = None,
+    start_date: str = None,
+    end_date: str = None,
+    limit: int = 100
+):
+    """Get all orders with optional filters"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Build query
+        query = """
+            SELECT o.*, 
+                   GROUP_CONCAT(DISTINCT oi.product_type SEPARATOR ', ') as products,
+                   COALESCE(SUM(oi.quantity), 0) as total_quantity
+            FROM orders o
+            LEFT JOIN order_items oi ON o.order_id = oi.order_id
+            WHERE 1=1
+        """
+        params = []
+        
+        if status and status != "All":
+            query += " AND o.status = %s"
+            params.append(status)
+        
+        if search:
+            query += " AND (o.order_id LIKE %s OR o.customer_name LIKE %s)"
+            search_term = f"%{search}%"
+            params.extend([search_term, search_term])
+        
+        if product_type and product_type != "All":
+            query += " AND oi.product_type = %s"
+            params.append(product_type)
+        
+        if start_date and end_date:
+            query += " AND o.created_at BETWEEN %s AND %s"
+            params.extend([start_date, end_date])
+        
+        query += " GROUP BY o.id ORDER BY o.created_at DESC LIMIT %s"
+        params.append(limit)
+        
+        cursor.execute(query, tuple(params))
+        orders = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": orders,
+            "count": len(orders)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/orders/{order_id}")
+def get_order_details(order_id: str):
+    """Get detailed information about a specific order"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get order details
+        cursor.execute("SELECT * FROM orders WHERE order_id = %s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Get order items
+        cursor.execute("SELECT * FROM order_items WHERE order_id = %s", (order_id,))
+        items = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        order['items'] = items
+        
+        return {
+            "status": "success",
+            "data": order
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.put("/orders/{order_id}/status")
+def update_order_status(order_id: str, request: OrderStatusUpdate):
+    """Update order status"""
+    try:
+        from datetime import datetime
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if order exists
+        cursor.execute("SELECT id FROM orders WHERE order_id = %s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Update status and timestamp based on status
+        timestamp_field = None
+        if request.status == "Packed":
+            timestamp_field = "packed_at"
+        elif request.status == "Out for Delivery":
+            timestamp_field = "out_for_delivery_at"
+        elif request.status == "Delivered":
+            timestamp_field = "delivered_at"
+        
+        if timestamp_field:
+            cursor.execute(
+                f"UPDATE orders SET status = %s, {timestamp_field} = %s WHERE order_id = %s",
+                (request.status, datetime.now(), order_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE orders SET status = %s WHERE order_id = %s",
+                (request.status, order_id)
+            )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Order status updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.delete("/orders/{order_id}")
+def delete_order(order_id: str):
+    """Delete an order (sets status to Cancelled)"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if order exists
+        cursor.execute("SELECT id FROM orders WHERE order_id = %s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Update status to cancelled
+        cursor.execute(
+            "UPDATE orders SET status = 'Cancelled' WHERE order_id = %s",
+            (order_id,)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Order cancelled successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/orders/stats/summary")
+def get_orders_stats():
+    """Get order statistics"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get total orders by status
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_orders,
+                SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending_orders,
+                SUM(CASE WHEN status = 'Delivered' THEN 1 ELSE 0 END) as delivered_orders,
+                SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END) as cancelled_orders,
+                SUM(total_amount) as total_revenue
+            FROM orders
+        """)
+        stats = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": stats
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
