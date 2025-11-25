@@ -12,10 +12,23 @@ class SignupPage(QtWidgets.QWidget):
         self.bg.setScaledContents(True)
         self.bg_pixmap = QtGui.QPixmap(os.path.join(self.base_dir, "images", "login_back.png"))
         
+        # Scroll Area Setup
+        self.scroll_area = QtWidgets.QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("background: transparent; border: none;")
+        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+        # Scroll Content Widget
+        self.scroll_content = QtWidgets.QWidget()
+        self.scroll_content.setStyleSheet("background: transparent;")
+        self.scroll_layout = QtWidgets.QVBoxLayout(self.scroll_content)
+        self.scroll_layout.setContentsMargins(0, 20, 0, 20)
+        self.scroll_layout.setAlignment(QtCore.Qt.AlignHCenter)
+
         # Semi-transparent form container
-        self.form_frame = QtWidgets.QFrame(self)
-        # Note: SetSizeHint or adjusting the layout might be better than fixed large min size
-        self.form_frame.setMinimumSize(1200, 1200) 
+        self.form_frame = QtWidgets.QFrame()
+        self.form_frame.setMinimumSize(500, 700) 
+        self.form_frame.setMaximumSize(700, 16777215)
         self.form_frame.setStyleSheet("""
             QFrame {
                 background-color: rgba(88, 129, 87, 204);
@@ -25,10 +38,11 @@ class SignupPage(QtWidgets.QWidget):
             }
         """)
 
+        self.scroll_layout.addWidget(self.form_frame)
+        self.scroll_area.setWidget(self.scroll_content)
+
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addStretch()
-        layout.addWidget(self.form_frame, alignment=QtCore.Qt.AlignHCenter)
-        layout.addStretch()
+        layout.addWidget(self.scroll_area)
 
         # Layout inside form_frame
         self.form_layout = QtWidgets.QVBoxLayout(self.form_frame)
@@ -124,7 +138,7 @@ class SignupPage(QtWidgets.QWidget):
         """Helper function to create a consistently styled QLineEdit."""
         line_edit = QtWidgets.QLineEdit()
         line_edit.setPlaceholderText(placeholder_text)
-        line_edit.setMinimumWidth(700)
+        # line_edit.setMinimumWidth(700) # Removed fixed width
         line_edit.setEchoMode(echo_mode)
 
         # ===== Updated style for all fields =====

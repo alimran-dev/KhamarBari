@@ -17,7 +17,8 @@ class LoginPage(QtWidgets.QWidget):
 
         # central form frame
         self.form_frame = QtWidgets.QFrame(self)
-        self.form_frame.setMinimumSize(1200, 900)
+        self.form_frame.setMinimumSize(400, 500)
+        # self.form_frame.setMaximumSize(600, 700)
         self.form_frame.setStyleSheet("""
             QFrame {
                 background-color: rgba(88, 129, 87, 204);
@@ -53,7 +54,7 @@ class LoginPage(QtWidgets.QWidget):
         # Email Field
         self.email = QtWidgets.QLineEdit() 
         self.email.setPlaceholderText("Email") 
-        self.email.setMinimumWidth(700)
+        # self.email.setMinimumWidth(700) # Removed fixed width
         self.email.setStyleSheet("""
             QLineEdit {
                 background-color: #F0EFEF;
@@ -69,7 +70,7 @@ class LoginPage(QtWidgets.QWidget):
         # Password
         self.password = QtWidgets.QLineEdit()
         self.password.setPlaceholderText("Password")
-        self.password.setMinimumWidth(700)
+        # self.password.setMinimumWidth(700) # Removed fixed width
         self.password.setEchoMode(QtWidgets.QLineEdit.Password)
         self.password.setStyleSheet("""
             QLineEdit {

@@ -1,12 +1,21 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 from config.db import get_connection
 import re
+import os
+import shutil
+import random
+import json
 
 load_dotenv()
 
 app = FastAPI()
+
+# Mount uploads directory
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 class SignupRequest(BaseModel):
@@ -131,7 +140,7 @@ def get_all_cattle():
         cursor = conn.cursor()
         
         # Fetch all cattle
-        cursor.execute("SELECT Name, weight FROM cattles")
+        cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles")
         cattle_records = cursor.fetchall()
         
         cursor.close()
@@ -141,7 +150,11 @@ def get_all_cattle():
         cattle_list = [
             {
                 "name": record[0],
-                "weight": float(record[1]) if record[1] is not None else None
+                "weight": float(record[1]) if record[1] is not None else None,
+                "tag_number": record[2],
+                "breed": record[3],
+                "current_weight": float(record[4]) if record[4] is not None else None,
+                "photo_path": record[5]
             }
             for record in cattle_records
         ]
@@ -157,18 +170,83 @@ def get_all_cattle():
 
 
 @app.post("/cattle")
-def add_cattle(request: CattleRequest):
+def add_cattle(
+    name: str = Form(...),
+    breed: str = Form(None),
+    purpose: str = Form(None),
+    gender: str = Form(None),
+    dob: str = Form(None),
+    entry_date: str = Form(None),
+    initial_weight: float = Form(None),
+    current_weight: float = Form(None),
+    seller_name: str = Form(None),
+    seller_address: str = Form(None),
+    seller_phone: str = Form(None),
+    health_notes: str = Form(None),
+    medical_history: str = Form(None),
+    photo: UploadFile = File(None),
+    documents: UploadFile = File(None)
+):
     """Add a new cattle to the cattles table"""
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
+        # Generate Tag Number
+        tag_number = str(random.randint(100000, 999999))
+        
+        # Handle File Uploads
+        photo_path = None
+        documents_path = None
+        
+        if photo or documents:
+            upload_dir = f"uploads/{tag_number}"
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            if photo:
+                file_location = f"{upload_dir}/{photo.filename}"
+                with open(file_location, "wb+") as file_object:
+                    shutil.copyfileobj(photo.file, file_object)
+                photo_path = file_location
+                
+            if documents:
+                file_location = f"{upload_dir}/{documents.filename}"
+                with open(file_location, "wb+") as file_object:
+                    shutil.copyfileobj(documents.file, file_object)
+                documents_path = file_location
+
         # Insert new cattle
-        cursor.execute(
-            "INSERT INTO cattles (Name, weight) VALUES (%s, %s)",
-            (request.name, request.weight)
+        query = """
+            INSERT INTO cattles (
+                Name, weight, tag_number, breed, purpose, gender, dob, entry_date, 
+                initial_weight, current_weight, health_notes, seller_name, 
+                seller_address, seller_phone, photo_path, documents_path
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            name, current_weight, tag_number, breed, purpose, gender, dob, entry_date,
+            initial_weight, current_weight, health_notes, seller_name,
+            seller_address, seller_phone, photo_path, documents_path
         )
+        
+        cursor.execute(query, values)
+        cattle_id = cursor.lastrowid
         conn.commit()
+        
+        # Insert Medical History
+        if medical_history:
+            try:
+                history_list = json.loads(medical_history)
+                if history_list:
+                    mh_query = "INSERT INTO medical_history (cattle_id, date, name, diagnosis) VALUES (%s, %s, %s, %s)"
+                    mh_values = []
+                    for item in history_list:
+                        mh_values.append((cattle_id, item['date'], item['name'], item['diagnosis']))
+                    
+                    cursor.executemany(mh_query, mh_values)
+                    conn.commit()
+            except json.JSONDecodeError:
+                print("Error decoding medical history JSON")
         
         cursor.close()
         conn.close()
@@ -177,11 +255,14 @@ def add_cattle(request: CattleRequest):
             "status": "success",
             "message": "Cattle added successfully",
             "data": {
-                "name": request.name,
-                "weight": request.weight
+                "name": name,
+                "tag_number": tag_number,
+                "weight": current_weight,
+                "photo_path": photo_path
             }
         }
     except Exception as e:
+        print(f"Error adding cattle: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
