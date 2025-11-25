@@ -431,3 +431,146 @@ def get_cattle_details(tag_number: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ==================== Production Endpoints ====================
+
+class ProductionEntryRequest(BaseModel):
+    animal_tag: str
+    animal_name: str
+    product_type: str
+    quantity: float
+    unit: str
+    time: str
+    notes: str = ""
+    date: str
+
+
+@app.post("/production/entry")
+def create_production_entry(request: ProductionEntryRequest):
+    """Creates a new production entry"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if the animal exists
+        cursor.execute("SELECT id FROM cattles WHERE tag_number = %s", (request.animal_tag,))
+        cattle = cursor.fetchone()
+        
+        if not cattle:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Animal not found with the given tag")
+        
+        cattle_id = cattle[0]
+        
+        # Insert production entry
+        cursor.execute(
+            """INSERT INTO production_entries 
+               (cattle_id, animal_tag, animal_name, product_type, quantity, unit, entry_time, entry_date, notes) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (cattle_id, request.animal_tag, request.animal_name, request.product_type, 
+             request.quantity, request.unit, request.time, request.date, request.notes)
+        )
+        conn.commit()
+        
+        entry_id = cursor.lastrowid
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Production entry created successfully",
+            "data": {
+                "id": entry_id,
+                "animal_tag": request.animal_tag,
+                "product_type": request.product_type,
+                "quantity": request.quantity,
+                "unit": request.unit
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/production/entries")
+def get_production_entries(limit: int = 10):
+    """Get recent production entries"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """SELECT * FROM production_entries 
+               ORDER BY created_at DESC 
+               LIMIT %s""",
+            (limit,)
+        )
+        entries = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": entries
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/production/summary")
+def get_production_summary():
+    """Get production summary for today"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get today's date
+        from datetime import date
+        today = date.today().strftime("%m/%d/%y")
+        
+        # Get total milk production
+        cursor.execute(
+            """SELECT SUM(quantity) as total FROM production_entries 
+               WHERE product_type = 'Milk' AND entry_date = %s""",
+            (today,)
+        )
+        milk_result = cursor.fetchone()
+        total_milk = milk_result['total'] if milk_result['total'] else 0
+        
+        # Get total eggs
+        cursor.execute(
+            """SELECT SUM(quantity) as total FROM production_entries 
+               WHERE product_type = 'Eggs' AND entry_date = %s""",
+            (today,)
+        )
+        eggs_result = cursor.fetchone()
+        total_eggs = eggs_result['total'] if eggs_result['total'] else 0
+        
+        # Get total other products (Wool bale + Waste bin)
+        cursor.execute(
+            """SELECT SUM(quantity) as total FROM production_entries 
+               WHERE product_type IN ('Wool bale', 'Waste bin') AND entry_date = %s""",
+            (today,)
+        )
+        other_result = cursor.fetchone()
+        total_other = other_result['total'] if other_result['total'] else 0
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": {
+                "milk": total_milk,
+                "eggs": total_eggs,
+                "other": total_other,
+                "date": today
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

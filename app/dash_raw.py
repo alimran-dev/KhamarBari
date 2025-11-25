@@ -1,6 +1,7 @@
 import sys
 from PyQt5 import QtCore, QtGui, QtWidgets
 from cattle_page import CattlePage
+from production_page import ProductionPage
 
 # --- Color Scheme from the Design ---
 BG_COLOR_DARK = "#588157"  # Sidebar Dark Olive Green
@@ -201,8 +202,12 @@ class DashboardPage(QtWidgets.QWidget):
         # Cattle Page
         self.cattle_page = CattlePage()
         
+        # Production Page
+        self.production_page = ProductionPage()
+        
         self.pages_stack.addWidget(self.dashboard_home)
         self.pages_stack.addWidget(self.cattle_page)
+        self.pages_stack.addWidget(self.production_page)
         
         body_layout = QtWidgets.QVBoxLayout(self.main_body)
         body_layout.addWidget(self.pages_stack)
@@ -215,6 +220,8 @@ class DashboardPage(QtWidgets.QWidget):
             self.pages_stack.setCurrentWidget(self.dashboard_home)
         elif text == "Cattle":
             self.pages_stack.setCurrentWidget(self.cattle_page)
+        elif text == "Production":
+            self.pages_stack.setCurrentWidget(self.production_page)
 
     def _add_header_action_circles(self, layout):
         """Adds the two circular placeholders to the top right of the header."""
