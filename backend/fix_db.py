@@ -61,7 +61,8 @@ def fix_database():
             ("seller_address", "VARCHAR(255)"),
             ("seller_phone", "VARCHAR(20)"),
             ("photo_path", "VARCHAR(255)"),
-            ("documents_path", "VARCHAR(255)")
+            ("documents_path", "VARCHAR(255)"),
+            ("is_archived", "BOOLEAN DEFAULT FALSE")
         ]
 
         for col_name, col_type in columns_to_add:

@@ -37,7 +37,7 @@ class CattleRequest(BaseModel):
 
 
 class CattleArchiveRequest(BaseModel):
-    name: str
+    tag_number: str
     is_archived: bool
 
 @app.get("/")
@@ -139,8 +139,8 @@ def get_all_cattle():
         conn = get_connection()
         cursor = conn.cursor()
         
-        # Fetch all cattle
-        cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles")
+        # Fetch all cattle that are not archived
+        cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = FALSE OR is_archived IS NULL")
         cattle_records = cursor.fetchall()
         
         cursor.close()
@@ -162,6 +162,43 @@ def get_all_cattle():
         return {
             "status": "success",
             "message": "Cattle retrieved successfully",
+            "data": cattle_list,
+            "count": len(cattle_list)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/cattle/archived")
+def get_archived_cattle():
+    """Get all archived cattle from the cattles table"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Fetch all cattle that are archived
+        cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = TRUE")
+        cattle_records = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Format the results
+        cattle_list = [
+            {
+                "name": record[0],
+                "weight": float(record[1]) if record[1] is not None else None,
+                "tag_number": record[2],
+                "breed": record[3],
+                "current_weight": float(record[4]) if record[4] is not None else None,
+                "photo_path": record[5]
+            }
+            for record in cattle_records
+        ]
+        
+        return {
+            "status": "success",
+            "message": "Archived cattle retrieved successfully",
             "data": cattle_list,
             "count": len(cattle_list)
         }
@@ -275,8 +312,8 @@ def update_cattle_archive_status(request: CattleArchiveRequest):
         
         # Update the is_archived status
         cursor.execute(
-            "UPDATE cattles SET is_archived = %s WHERE Name = %s",
-            (request.is_archived, request.name)
+            "UPDATE cattles SET is_archived = %s WHERE tag_number = %s",
+            (request.is_archived, request.tag_number)
         )
         conn.commit()
         
@@ -284,7 +321,7 @@ def update_cattle_archive_status(request: CattleArchiveRequest):
         if cursor.rowcount == 0:
             cursor.close()
             conn.close()
-            raise HTTPException(status_code=404, detail=f"Cattle with name '{request.name}' not found")
+            raise HTTPException(status_code=404, detail=f"Cattle with tag_number '{request.tag_number}' not found")
         
         cursor.close()
         conn.close()
@@ -293,9 +330,102 @@ def update_cattle_archive_status(request: CattleArchiveRequest):
             "status": "success",
             "message": "Cattle archive status updated successfully",
             "data": {
-                "name": request.name,
+                "tag_number": request.tag_number,
                 "is_archived": request.is_archived
             }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.put("/cattle/{tag_number}")
+def update_cattle(
+    tag_number: str,
+    name: str = Form(...),
+    breed: str = Form(None),
+    purpose: str = Form(None),
+    gender: str = Form(None),
+    dob: str = Form(None),
+    entry_date: str = Form(None),
+    initial_weight: float = Form(None),
+    current_weight: float = Form(None),
+    seller_name: str = Form(None),
+    seller_address: str = Form(None),
+    seller_phone: str = Form(None),
+    health_notes: str = Form(None)
+):
+    """Update an existing cattle record"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Update cattle
+        query = """
+            UPDATE cattles SET
+                Name = %s, breed = %s, purpose = %s, gender = %s, dob = %s, 
+                entry_date = %s, initial_weight = %s, current_weight = %s, 
+                health_notes = %s, seller_name = %s, seller_address = %s, 
+                seller_phone = %s
+            WHERE tag_number = %s
+        """
+        values = (
+            name, breed, purpose, gender, dob, entry_date,
+            initial_weight, current_weight, health_notes, seller_name,
+            seller_address, seller_phone, tag_number
+        )
+        
+        cursor.execute(query, values)
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Cattle not found")
+            
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Cattle updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/cattle/{tag_number}")
+def get_cattle_details(tag_number: str):
+    """Get full details of a specific cattle"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True) # Use dictionary cursor for easier mapping
+        
+        cursor.execute("SELECT * FROM cattles WHERE tag_number = %s", (tag_number,))
+        cattle = cursor.fetchone()
+        
+        if not cattle:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Cattle not found")
+            
+        # Normalize the 'Name' field to lowercase 'name' for frontend consistency
+        if 'Name' in cattle:
+            cattle['name'] = cattle['Name']
+            
+        # Fetch medical history
+        cursor.execute("SELECT * FROM medical_history WHERE cattle_id = %s", (cattle['id'],))
+        history = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        cattle['medical_history'] = history
+        
+        return {
+            "status": "success",
+            "data": cattle
         }
     except HTTPException:
         raise
