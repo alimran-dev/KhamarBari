@@ -569,18 +569,31 @@ class OrderPage(QtWidgets.QWidget):
         header_layout = QtWidgets.QHBoxLayout()
         header_layout.setSpacing(10)
         
-        # Tab buttons
+        # Tab buttons with container for centering
+        tab_button_container = QtWidgets.QWidget()
+        tab_button_layout = QtWidgets.QHBoxLayout(tab_button_container)
+        tab_button_layout.setContentsMargins(0, 0, 0, 0)
+        tab_button_layout.setSpacing(0)
+        tab_button_layout.setAlignment(QtCore.Qt.AlignHCenter)
+        
         self.tab_all = self.create_tab_button("All orders", True)
         self.tab_place = self.create_tab_button("Place Order", False)
         self.tab_pre = self.create_tab_button("Pre Orders", False)
+        
+        # Set position properties for rounded corners
+        self.tab_all.setProperty("tab_pos", "left")
+        self.tab_place.setProperty("tab_pos", "middle")
+        self.tab_pre.setProperty("tab_pos", "right")
         
         self.tab_all.clicked.connect(lambda: self.switch_tab(0))
         self.tab_place.clicked.connect(lambda: self.switch_tab(1))
         self.tab_pre.clicked.connect(lambda: self.switch_tab(2))
         
-        header_layout.addWidget(self.tab_all)
-        header_layout.addWidget(self.tab_place)
-        header_layout.addWidget(self.tab_pre)
+        tab_button_layout.addWidget(self.tab_all)
+        tab_button_layout.addWidget(self.tab_place)
+        tab_button_layout.addWidget(self.tab_pre)
+        
+        header_layout.addWidget(tab_button_container)
         header_layout.addStretch()
         
         content_layout.addLayout(header_layout)
@@ -619,33 +632,31 @@ class OrderPage(QtWidgets.QWidget):
         btn = QtWidgets.QPushButton(text)
         btn.setCheckable(True)
         btn.setChecked(is_active)
-        btn.setFixedHeight(40)
-        btn.setMinimumWidth(120)
+        btn.setFixedHeight(45)
+        btn.setFixedWidth(150)
+        btn.setCursor(QtCore.Qt.PointingHandCursor)
         
         if is_active:
             btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #344E41;
+                    background-color: #588157;
                     color: white;
-                    border-radius: 5px 5px 0 0;
-                    padding: 10px 20px;
+                    border: 2px solid #588157;
+                    font-size: 11pt;
                     font-weight: bold;
-                    font-size: 10pt;
                 }
             """)
         else:
             btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #D8E2D1;
+                    background-color: white;
                     color: #344E41;
-                    border-radius: 5px 5px 0 0;
-                    padding: 10px 20px;
-                    font-weight: normal;
-                    font-size: 10pt;
+                    border: 2px solid #588157;
+                    font-size: 11pt;
+                    font-weight: 500;
                 }
                 QPushButton:hover {
-                    background-color: #A3B18A;
-                    color: white;
+                    background-color: #f0f0f0;
                 }
             """)
         
@@ -658,31 +669,40 @@ class OrderPage(QtWidgets.QWidget):
         for i, tab in enumerate(tabs):
             is_active = (i == index)
             tab.setChecked(is_active)
+            
+            # Determine border radius based on position
+            pos = tab.property("tab_pos")
+            if pos == "left":
+                border_radius = "border-top-left-radius: 10px; border-bottom-left-radius: 10px;"
+            elif pos == "right":
+                border_radius = "border-top-right-radius: 10px; border-bottom-right-radius: 10px;"
+            else:
+                border_radius = ""
+            
             if is_active:
-                tab.setStyleSheet("""
-                    QPushButton {
-                        background-color: #344E41;
+                tab.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: #588157;
                         color: white;
-                        border-radius: 5px 5px 0 0;
-                        padding: 10px 20px;
+                        border: 2px solid #588157;
+                        {border_radius}
+                        font-size: 11pt;
                         font-weight: bold;
-                        font-size: 10pt;
-                    }
+                    }}
                 """)
             else:
-                tab.setStyleSheet("""
-                    QPushButton {
-                        background-color: #D8E2D1;
+                tab.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: white;
                         color: #344E41;
-                        border-radius: 5px 5px 0 0;
-                        padding: 10px 20px;
-                        font-weight: normal;
-                        font-size: 10pt;
-                    }
-                    QPushButton:hover {
-                        background-color: #A3B18A;
-                        color: white;
-                    }
+                        border: 2px solid #588157;
+                        {border_radius}
+                        font-size: 11pt;
+                        font-weight: 500;
+                    }}
+                    QPushButton:hover {{
+                        background-color: #f0f0f0;
+                    }}
                 """)
         
         self.tabs_stack.setCurrentIndex(index)

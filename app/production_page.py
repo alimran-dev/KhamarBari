@@ -202,7 +202,8 @@ class ProductionPage(QtWidgets.QWidget):
     
     def _create_tab_button(self, text, position="center"):
         btn = QtWidgets.QPushButton(text)
-        btn.setFixedSize(150, 50)
+        btn.setFixedHeight(45)
+        btn.setFixedWidth(200)
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setProperty("tab_pos", position)
         return btn
@@ -218,39 +219,39 @@ class ProductionPage(QtWidgets.QWidget):
             self.stack.setCurrentIndex(1)
     
     def _update_tab_styles(self, active_btn):
-        base_style = """
-            QPushButton {
-                font-size: 14pt;
-                font-weight: bold;
-                border: 2px solid #344E41;
-                border-radius: 0px;
-                background-color: transparent;
-                color: #344E41;
-            }
-        """
-        
-        active_style = """
-            QPushButton {
-                font-size: 14pt;
-                font-weight: bold;
-                border: 2px solid #344E41;
-                border-radius: 0px;
-                background-color: #344E41;
-                color: white;
-            }
-        """
-        
         for btn in self.tabs:
             pos = btn.property("tab_pos")
-            style = active_style if btn == active_btn else base_style
             
-            # Add position-specific border radius
             if pos == "left":
-                style += "border-top-left-radius: 10px; border-bottom-left-radius: 10px;"
-            elif pos == "right":
-                style += "border-top-right-radius: 10px; border-bottom-right-radius: 10px;"
+                border_radius = "border-top-left-radius: 10px; border-bottom-left-radius: 10px;"
+            else:
+                border_radius = "border-top-right-radius: 10px; border-bottom-right-radius: 10px;"
             
-            btn.setStyleSheet(style)
+            if btn == active_btn:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: #588157;
+                        color: white;
+                        border: 2px solid #588157;
+                        {border_radius}
+                        font-size: 11pt;
+                        font-weight: bold;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: white;
+                        color: #344E41;
+                        border: 2px solid #588157;
+                        {border_radius}
+                        font-size: 11pt;
+                        font-weight: 500;
+                    }}
+                    QPushButton:hover {{
+                        background-color: #f0f0f0;
+                    }}
+                """)
     
     def _create_shadow_effect(self, blur_radius=20, offset_y=4):
         """Creates a shadow effect for modern card design."""

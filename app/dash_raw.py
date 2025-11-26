@@ -3,8 +3,14 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from cattle_page import CattlePage
 from production_page import ProductionPage
 from order_page import OrderPage
+from warehouse_page import WarehousePage
 from labour_page import LabourPage
 from settings_page import SettingsPage
+from finance_page import FinancePage
+from veterinary_page import VeterinaryPage
+from calendar_page import CalendarPage
+from notification_widget import NotificationWidget
+from support_page import SupportPage
 
 # --- Color Scheme from the Design ---
 BG_COLOR_DARK = "#588157"  # Sidebar Dark Olive Green
@@ -35,6 +41,7 @@ class DashboardPage(QtWidgets.QWidget):
         """Loads user data into the dashboard."""
         data = user_info.get("data", {})
         owner_name = data.get("owner_name", "User")
+        self.user_email = data.get("email", "")
         self.user_id.setText(owner_name)
         
         # Set default profile picture
@@ -42,6 +49,12 @@ class DashboardPage(QtWidgets.QWidget):
         
         # Load user data into settings page
         self.settings_page.load_user_data(user_info)
+        
+        # Initialize finance page with user email
+        self.finance_page = FinancePage(self.user_email)
+        
+        # Add finance page to stack
+        self.pages_stack.addWidget(self.finance_page)
     
     def set_default_profile_pic(self):
         """Set default profile picture in sidebar."""
@@ -159,22 +172,39 @@ class DashboardPage(QtWidgets.QWidget):
         self.menu_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.menu_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         
-        # Menu Items (using placeholder QIcons)
+        # Menu Items with icons
         menu_items = [
-            ("Dashboard", True), ("Cattle", False), ("Production", False), 
-            ("Order", False), ("Warehouse", False), ("Labour", False), 
-            ("Expanse/Income", False), ("Veterinary", False), 
-            ("Settings", False), ("Support", False)
+            ("Dashboard", "dashboard.png", True), 
+            ("Cattle", "cattles.png", False), 
+            ("Production", "barn.png", False), 
+            ("Order", "shopping-cart.png", False), 
+            ("Warehouse", "warehouse.png", False), 
+            ("Labour", "worker.png", False), 
+            ("Finance", "budget.png", False), 
+            ("Veterinary", "veterinarian.png", False), 
+            ("Settings", "settings.png", False), 
+            ("Support", None, False)
         ]
         
-        # Create a generic icon for demonstration (QGrid/Square icon)
+        # Icon base path
+        icon_base_path = "../backend/uploads/sidebar_icons/"
         icon_size = QtCore.QSize(20, 20)
-        grid_icon = QtGui.QIcon()
-        # FIX: Ensure _create_grid_pixmap returns a pixmap that is used correctly
-        grid_icon.addPixmap(self._create_grid_pixmap(icon_size), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         
-        for text, is_active in menu_items:
-            item = QtWidgets.QListWidgetItem(grid_icon, text)
+        for item_data in menu_items:
+            text = item_data[0]
+            icon_file = item_data[1]
+            is_active = item_data[2]
+            
+            # Load icon if available, otherwise use grid icon
+            if icon_file:
+                icon_path = icon_base_path + icon_file
+                icon = QtGui.QIcon(icon_path)
+            else:
+                # Create a generic icon for items without a specific icon
+                icon = QtGui.QIcon()
+                icon.addPixmap(self._create_grid_pixmap(icon_size), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+            
+            item = QtWidgets.QListWidgetItem(icon, text)
             item.setSizeHint(QtCore.QSize(200, 40)) 
             self.menu_list.addItem(item)
             if is_active:
@@ -278,18 +308,34 @@ class DashboardPage(QtWidgets.QWidget):
         # Order Page
         self.order_page = OrderPage()
         
+        # Warehouse Page
+        self.warehouse_page = WarehousePage()
+        
         # Labour Page
         self.labour_page = LabourPage()
         
+        # Veterinary Page
+        self.veterinary_page = VeterinaryPage()
+        
+        # Calendar Page
+        self.calendar_page = CalendarPage()
+        
         # Settings Page
         self.settings_page = SettingsPage(self)
+        
+        # Support Page
+        self.support_page = SupportPage()
         
         self.pages_stack.addWidget(self.dashboard_home)
         self.pages_stack.addWidget(self.cattle_page)
         self.pages_stack.addWidget(self.production_page)
         self.pages_stack.addWidget(self.order_page)
+        self.pages_stack.addWidget(self.warehouse_page)
         self.pages_stack.addWidget(self.labour_page)
+        self.pages_stack.addWidget(self.veterinary_page)
+        self.pages_stack.addWidget(self.calendar_page)
         self.pages_stack.addWidget(self.settings_page)
+        self.pages_stack.addWidget(self.support_page)
         
         body_layout = QtWidgets.QVBoxLayout(self.main_body)
         body_layout.addWidget(self.pages_stack)
@@ -306,20 +352,78 @@ class DashboardPage(QtWidgets.QWidget):
             self.pages_stack.setCurrentWidget(self.production_page)
         elif text == "Order":
             self.pages_stack.setCurrentWidget(self.order_page)
+        elif text == "Warehouse":
+            self.pages_stack.setCurrentWidget(self.warehouse_page)
         elif text == "Labour":
             self.pages_stack.setCurrentWidget(self.labour_page)
+        elif text == "Finance":
+            self.pages_stack.setCurrentWidget(self.finance_page)
+        elif text == "Veterinary":
+            self.pages_stack.setCurrentWidget(self.veterinary_page)
         elif text == "Settings":
             self.pages_stack.setCurrentWidget(self.settings_page)
+        elif text == "Support":
+            self.pages_stack.setCurrentWidget(self.support_page)
 
     def _add_header_action_circles(self, layout):
-        """Adds the two circular placeholders to the top right of the header."""
-        for _ in range(2):
-            circle = QtWidgets.QLabel()
-            circle.setFixedSize(35, 35)
-            # Placeholder color matching the profile area
-            circle.setStyleSheet("background-color: #D3D3D3; border-radius: 17px;") 
-            layout.addWidget(circle)
-            layout.addSpacing(10)
+        """Adds the action buttons to the top right of the header."""
+        # Calendar button
+        self.calendar_btn = QtWidgets.QPushButton()
+        self.calendar_btn.setFixedSize(40, 40)
+        self.calendar_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.calendar_btn.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border-radius: 20px;
+                font-size: 16pt;
+            }
+            QPushButton:hover {
+                background-color: #f0f0f0;
+            }
+        """)
+        self.calendar_btn.setText("📅")
+        self.calendar_btn.setToolTip("Open Calendar")
+        self.calendar_btn.clicked.connect(self.open_calendar)
+        layout.addWidget(self.calendar_btn)
+        layout.addSpacing(10)
+        
+        # Notification button
+        self.notification_btn = QtWidgets.QPushButton()
+        self.notification_btn.setFixedSize(40, 40)
+        self.notification_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.notification_btn.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border-radius: 20px;
+                font-size: 16pt;
+            }
+            QPushButton:hover {
+                background-color: #f0f0f0;
+            }
+        """)
+        self.notification_btn.setText("🔔")
+        self.notification_btn.setToolTip("Notifications")
+        self.notification_btn.clicked.connect(self.show_notifications)
+        layout.addWidget(self.notification_btn)
+        layout.addSpacing(10)
+        
+        # Create notification widget (hidden initially)
+        self.notification_widget = NotificationWidget(self)
+    
+    def open_calendar(self):
+        """Open the calendar page"""
+        self.pages_stack.setCurrentWidget(self.calendar_page)
+    
+    def show_notifications(self):
+        """Show the notification dropdown"""
+        # Position the notification widget below the button
+        button_pos = self.notification_btn.mapToGlobal(QtCore.QPoint(0, 0))
+        widget_x = button_pos.x() - self.notification_widget.width() + self.notification_btn.width()
+        widget_y = button_pos.y() + self.notification_btn.height() + 5
+        
+        self.notification_widget.move(widget_x, widget_y)
+        self.notification_widget.show()
+        self.notification_widget.raise_()
 
 
 if __name__ == '__main__':
