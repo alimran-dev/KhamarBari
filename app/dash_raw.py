@@ -3,6 +3,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from cattle_page import CattlePage
 from production_page import ProductionPage
 from order_page import OrderPage
+from labour_page import LabourPage
+from settings_page import SettingsPage
 
 # --- Color Scheme from the Design ---
 BG_COLOR_DARK = "#588157"  # Sidebar Dark Olive Green
@@ -34,6 +36,73 @@ class DashboardPage(QtWidgets.QWidget):
         data = user_info.get("data", {})
         owner_name = data.get("owner_name", "User")
         self.user_id.setText(owner_name)
+        
+        # Set default profile picture
+        self.set_default_profile_pic()
+        
+        # Load user data into settings page
+        self.settings_page.load_user_data(user_info)
+    
+    def set_default_profile_pic(self):
+        """Set default profile picture in sidebar."""
+        pixmap = QtGui.QPixmap(120, 120)
+        pixmap.fill(QtCore.Qt.transparent)
+        
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # Draw circle background
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("#D3D3D3")))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawEllipse(0, 0, 120, 120)
+        
+        # Draw person icon
+        painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 3))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("#FFFFFF")))
+        
+        # Head
+        painter.drawEllipse(44, 28, 32, 32)
+        
+        # Body
+        path = QtGui.QPainterPath()
+        path.moveTo(60, 60)
+        path.arcTo(32, 60, 56, 56, 0, 180)
+        painter.drawPath(path)
+        
+        painter.end()
+        
+        self.profile_pic.setPixmap(pixmap)
+        self.profile_pic.setScaledContents(False)
+    
+    def update_profile_pic(self, file_path):
+        """Update sidebar profile picture from file."""
+        pixmap = QtGui.QPixmap(file_path)
+        if not pixmap.isNull():
+            # Scale and crop to circular
+            scaled = pixmap.scaled(
+                120, 120,
+                QtCore.Qt.KeepAspectRatioByExpanding,
+                QtCore.Qt.SmoothTransformation
+            )
+            
+            # Create circular mask
+            target = QtGui.QPixmap(120, 120)
+            target.fill(QtCore.Qt.transparent)
+            
+            painter = QtGui.QPainter(target)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            
+            path = QtGui.QPainterPath()
+            path.addEllipse(0, 0, 120, 120)
+            painter.setClipPath(path)
+            
+            # Center the image
+            x = (120 - scaled.width()) // 2
+            y = (120 - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+            painter.end()
+            
+            self.profile_pic.setPixmap(target)
 
     # --- 1. Sidebar Setup ---
     def _setup_sidebar(self):
@@ -209,10 +278,18 @@ class DashboardPage(QtWidgets.QWidget):
         # Order Page
         self.order_page = OrderPage()
         
+        # Labour Page
+        self.labour_page = LabourPage()
+        
+        # Settings Page
+        self.settings_page = SettingsPage(self)
+        
         self.pages_stack.addWidget(self.dashboard_home)
         self.pages_stack.addWidget(self.cattle_page)
         self.pages_stack.addWidget(self.production_page)
         self.pages_stack.addWidget(self.order_page)
+        self.pages_stack.addWidget(self.labour_page)
+        self.pages_stack.addWidget(self.settings_page)
         
         body_layout = QtWidgets.QVBoxLayout(self.main_body)
         body_layout.addWidget(self.pages_stack)
@@ -229,6 +306,10 @@ class DashboardPage(QtWidgets.QWidget):
             self.pages_stack.setCurrentWidget(self.production_page)
         elif text == "Order":
             self.pages_stack.setCurrentWidget(self.order_page)
+        elif text == "Labour":
+            self.pages_stack.setCurrentWidget(self.labour_page)
+        elif text == "Settings":
+            self.pages_stack.setCurrentWidget(self.settings_page)
 
     def _add_header_action_circles(self, layout):
         """Adds the two circular placeholders to the top right of the header."""

@@ -127,7 +127,7 @@ def login(request: LoginRequest):
         cursor = conn.cursor()
         
         # Check if user exists
-        cursor.execute("SELECT owner_name, farm_name, phone_number, email, password FROM users WHERE email = %s", (request.email,))
+        cursor.execute("SELECT owner_name, farm_name, phone_number, email, password, photo_url FROM users WHERE email = %s", (request.email,))
         user = cursor.fetchone()
         
         cursor.close()
@@ -145,8 +145,196 @@ def login(request: LoginRequest):
                 "owner_name": user[0],
                 "farm_name": user[1],
                 "phone_number": user[2],
-                "email": user[3]
+                "email": user[3],
+                "photo_url": user[5]
             }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/owner/{email}")
+def get_owner_profile(email: str):
+    """Get owner profile information"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT owner_name, farm_name, phone_number, email, photo_url FROM users WHERE email = %s",
+            (email,)
+        )
+        user = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "status": "success",
+            "data": {
+                "owner_name": user[0],
+                "farm_name": user[1],
+                "phone_number": user[2],
+                "email": user[3],
+                "photo_url": user[4]
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.put("/owner/{email}")
+def update_owner_profile(email: str, request: dict):
+    """Update owner profile information"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # First check if user exists
+        cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found. Please check the email address.")
+        
+        # Build dynamic update query
+        update_fields = []
+        params = []
+        
+        if "owner_name" in request:
+            update_fields.append("owner_name = %s")
+            params.append(request["owner_name"])
+        
+        if "farm_name" in request:
+            update_fields.append("farm_name = %s")
+            params.append(request["farm_name"])
+        
+        if "phone_number" in request:
+            update_fields.append("phone_number = %s")
+            params.append(request["phone_number"])
+        
+        if "photo_url" in request:
+            update_fields.append("photo_url = %s")
+            params.append(request["photo_url"])
+        
+        if not update_fields:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        params.append(email)
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE email = %s"
+        
+        cursor.execute(query, tuple(params))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Profile updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.post("/owner/{email}/upload-photo")
+async def upload_profile_photo(email: str, photo: UploadFile = File(...)):
+    """Upload profile photo for owner"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if user exists
+        cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Create profile photos directory
+        profile_dir = "uploads/profiles"
+        os.makedirs(profile_dir, exist_ok=True)
+        
+        # Generate unique filename
+        file_extension = os.path.splitext(photo.filename)[1]
+        safe_email = email.replace("@", "_at_").replace(".", "_")
+        filename = f"{safe_email}_profile{file_extension}"
+        file_path = os.path.join(profile_dir, filename)
+        
+        # Save the file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        
+        # Update database with photo URL
+        photo_url = f"/uploads/profiles/{filename}"
+        cursor.execute(
+            "UPDATE users SET photo_url = %s WHERE email = %s",
+            (photo_url, email)
+        )
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Profile photo uploaded successfully",
+            "photo_url": photo_url
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.delete("/owner/{email}/photo")
+def delete_profile_photo(email: str):
+    """Delete profile photo for owner"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Get current photo URL
+        cursor.execute("SELECT photo_url FROM users WHERE email = %s", (email,))
+        result = cursor.fetchone()
+        
+        if not result:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        photo_url = result[0]
+        
+        # Delete file if exists
+        if photo_url:
+            file_path = photo_url.lstrip("/")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        # Update database
+        cursor.execute(
+            "UPDATE users SET photo_url = NULL WHERE email = %s",
+            (email,)
+        )
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Profile photo deleted successfully"
         }
     except HTTPException:
         raise
@@ -847,6 +1035,573 @@ def get_orders_stats():
                 SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END) as cancelled_orders,
                 SUM(total_amount) as total_revenue
             FROM orders
+        """)
+        stats = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ===================== LABOUR MANAGEMENT ENDPOINTS =====================
+
+class LabourerRequest(BaseModel):
+    full_name: str
+    phone_number: str = None
+    national_id: str = None
+    address: str = None
+    photo_url: str = None
+    position: str
+    joining_date: str
+    status: str = "Active"
+    pay_type: str  # Monthly_Salary or Daily_Wage
+    base_rate: float
+
+
+class AttendanceRequest(BaseModel):
+    labour_id: int
+    date: str
+    status: str  # Present, Absent, Half-Day
+    overtime_hours: int = 0
+    notes: str = None
+
+
+class BulkAttendanceRequest(BaseModel):
+    date: str
+    attendance_records: list  # List of {labour_id, status, overtime_hours, notes}
+
+
+class PayrollRequest(BaseModel):
+    labour_id: int
+    month: int
+    year: int
+    bonus_amount: float = 0.0
+    deduction_amount: float = 0.0
+    notes: str = None
+
+
+class PayrollUpdateRequest(BaseModel):
+    payment_status: str = None
+    payment_date: str = None
+    bonus_amount: float = None
+    deduction_amount: float = None
+    total_payable: float = None
+
+
+@app.post("/labourers")
+def create_labourer(request: LabourerRequest):
+    """Create a new labourer"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """INSERT INTO labourers 
+               (full_name, phone_number, national_id, address, photo_url, position, 
+                joining_date, status, pay_type, base_rate) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (request.full_name, request.phone_number, request.national_id, request.address,
+             request.photo_url, request.position, request.joining_date, request.status,
+             request.pay_type, request.base_rate)
+        )
+        
+        labourer_id = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Labourer created successfully",
+            "data": {"id": labourer_id}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/labourers")
+def get_labourers(status: str = None, position: str = None):
+    """Get all labourers with optional filters"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = "SELECT * FROM labourers WHERE 1=1"
+        params = []
+        
+        if status and status != "All":
+            query += " AND status = %s"
+            params.append(status)
+        
+        if position and position != "All":
+            query += " AND position = %s"
+            params.append(position)
+        
+        query += " ORDER BY full_name ASC"
+        
+        cursor.execute(query, tuple(params))
+        labourers = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": labourers,
+            "count": len(labourers)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/labourers/{labour_id}")
+def get_labourer(labour_id: int):
+    """Get a specific labourer by ID"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("SELECT * FROM labourers WHERE id = %s", (labour_id,))
+        labourer = cursor.fetchone()
+        
+        if not labourer:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Labourer not found")
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": labourer
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.put("/labourers/{labour_id}")
+def update_labourer(labour_id: int, request: LabourerRequest):
+    """Update a labourer's information"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """UPDATE labourers 
+               SET full_name = %s, phone_number = %s, national_id = %s, address = %s,
+                   photo_url = %s, position = %s, joining_date = %s, status = %s,
+                   pay_type = %s, base_rate = %s
+               WHERE id = %s""",
+            (request.full_name, request.phone_number, request.national_id, request.address,
+             request.photo_url, request.position, request.joining_date, request.status,
+             request.pay_type, request.base_rate, labour_id)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Labourer not found")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Labourer updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.delete("/labourers/{labour_id}")
+def delete_labourer(labour_id: int):
+    """Soft delete a labourer (set status to Inactive)"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "UPDATE labourers SET status = 'Inactive' WHERE id = %s",
+            (labour_id,)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Labourer not found")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Labourer deactivated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# Attendance endpoints
+@app.post("/attendance")
+def mark_attendance(request: AttendanceRequest):
+    """Mark attendance for a labourer"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """INSERT INTO attendance 
+               (labour_id, date, status, overtime_hours, notes) 
+               VALUES (%s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE 
+               status = VALUES(status), 
+               overtime_hours = VALUES(overtime_hours), 
+               notes = VALUES(notes)""",
+            (request.labour_id, request.date, request.status, 
+             request.overtime_hours, request.notes)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Attendance marked successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.post("/attendance/bulk")
+def mark_bulk_attendance(request: BulkAttendanceRequest):
+    """Mark attendance for multiple labourers on a specific date"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        for record in request.attendance_records:
+            cursor.execute(
+                """INSERT INTO attendance 
+                   (labour_id, date, status, overtime_hours, notes) 
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE 
+                   status = VALUES(status), 
+                   overtime_hours = VALUES(overtime_hours), 
+                   notes = VALUES(notes)""",
+                (record['labour_id'], request.date, record['status'], 
+                 record.get('overtime_hours', 0), record.get('notes'))
+            )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": f"Bulk attendance marked for {len(request.attendance_records)} labourers"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/attendance")
+def get_attendance(labour_id: int = None, month: int = None, year: int = None, date: str = None):
+    """Get attendance records with filters"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """SELECT a.*, l.full_name, l.position 
+                   FROM attendance a 
+                   JOIN labourers l ON a.labour_id = l.id 
+                   WHERE 1=1"""
+        params = []
+        
+        if labour_id:
+            query += " AND a.labour_id = %s"
+            params.append(labour_id)
+        
+        if month and year:
+            query += " AND MONTH(a.date) = %s AND YEAR(a.date) = %s"
+            params.extend([month, year])
+        
+        if date:
+            query += " AND a.date = %s"
+            params.append(date)
+        
+        query += " ORDER BY a.date DESC, l.full_name ASC"
+        
+        cursor.execute(query, tuple(params))
+        attendance = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": attendance,
+            "count": len(attendance)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.post("/payroll/calculate")
+def calculate_payroll(request: PayrollRequest):
+    """Calculate and create payroll for a labourer"""
+    try:
+        from datetime import datetime
+        import calendar
+        
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get labourer details
+        cursor.execute("SELECT * FROM labourers WHERE id = %s", (request.labour_id,))
+        labourer = cursor.fetchone()
+        
+        if not labourer:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Labourer not found")
+        
+        # Get attendance for the month
+        cursor.execute(
+            """SELECT status, overtime_hours FROM attendance 
+               WHERE labour_id = %s AND MONTH(date) = %s AND YEAR(date) = %s""",
+            (request.labour_id, request.month, request.year)
+        )
+        attendance_records = cursor.fetchall()
+        
+        # Calculate working days
+        total_working_days = 0.0
+        total_overtime_hours = 0
+        
+        for record in attendance_records:
+            if record['status'] == 'Present':
+                total_working_days += 1.0
+            elif record['status'] == 'Half-Day':
+                total_working_days += 0.5
+            total_overtime_hours += record.get('overtime_hours', 0)
+        
+        # Calculate base earning
+        base_rate = float(labourer['base_rate'])
+        if labourer['pay_type'] == 'Monthly_Salary':
+            # For monthly salary, calculate pro-rata if days missed
+            days_in_month = calendar.monthrange(request.year, request.month)[1]
+            base_earning = (base_rate / days_in_month) * total_working_days
+        else:  # Daily_Wage
+            base_earning = base_rate * total_working_days
+        
+        # Calculate total payable
+        total_payable = base_earning + request.bonus_amount - request.deduction_amount
+        
+        # Insert or update payroll record
+        cursor.execute(
+            """INSERT INTO payroll_transactions 
+               (labour_id, month, year, total_working_days, base_earning, 
+                bonus_amount, deduction_amount, total_payable, notes) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE 
+               total_working_days = VALUES(total_working_days),
+               base_earning = VALUES(base_earning),
+               bonus_amount = VALUES(bonus_amount),
+               deduction_amount = VALUES(deduction_amount),
+               total_payable = VALUES(total_payable),
+               notes = VALUES(notes)""",
+            (request.labour_id, request.month, request.year, total_working_days,
+             base_earning, request.bonus_amount, request.deduction_amount, 
+             total_payable, request.notes)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Payroll calculated successfully",
+            "data": {
+                "total_working_days": total_working_days,
+                "base_earning": float(base_earning),
+                "bonus_amount": float(request.bonus_amount),
+                "deduction_amount": float(request.deduction_amount),
+                "total_payable": float(total_payable)
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/payroll")
+def get_payroll(month: int = None, year: int = None, labour_id: int = None, status: str = None):
+    """Get payroll transactions with filters"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """SELECT p.*, l.full_name, l.position, l.pay_type 
+                   FROM payroll_transactions p 
+                   JOIN labourers l ON p.labour_id = l.id 
+                   WHERE 1=1"""
+        params = []
+        
+        if month:
+            query += " AND p.month = %s"
+            params.append(month)
+        
+        if year:
+            query += " AND p.year = %s"
+            params.append(year)
+        
+        if labour_id:
+            query += " AND p.labour_id = %s"
+            params.append(labour_id)
+        
+        if status and status != "All":
+            query += " AND p.payment_status = %s"
+            params.append(status)
+        
+        query += " ORDER BY p.year DESC, p.month DESC, l.full_name ASC"
+        
+        cursor.execute(query, tuple(params))
+        payroll = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": payroll,
+            "count": len(payroll)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.put("/payroll/{payroll_id}")
+def update_payroll_status(payroll_id: int, request: PayrollUpdateRequest):
+    """Update payroll payment status and/or amounts"""
+    try:
+        from datetime import datetime
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Build dynamic update query based on provided fields
+        update_fields = []
+        params = []
+        
+        if request.payment_status is not None:
+            update_fields.append("payment_status = %s")
+            params.append(request.payment_status)
+        
+        if request.payment_date is not None:
+            update_fields.append("payment_date = %s")
+            params.append(request.payment_date)
+        elif request.payment_status == "Paid":
+            update_fields.append("payment_date = %s")
+            params.append(datetime.now().strftime("%Y-%m-%d"))
+        
+        if request.bonus_amount is not None:
+            update_fields.append("bonus_amount = %s")
+            params.append(request.bonus_amount)
+        
+        if request.deduction_amount is not None:
+            update_fields.append("deduction_amount = %s")
+            params.append(request.deduction_amount)
+        
+        if request.total_payable is not None:
+            update_fields.append("total_payable = %s")
+            params.append(request.total_payable)
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        params.append(payroll_id)
+        
+        query = f"UPDATE payroll_transactions SET {', '.join(update_fields)} WHERE id = %s"
+        cursor.execute(query, tuple(params))
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Payroll record not found")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Payroll updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.delete("/payroll/{payroll_id}")
+def delete_payroll(payroll_id: int):
+    """Delete a payroll transaction"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM payroll_transactions WHERE id = %s", (payroll_id,))
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Payroll record not found")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Payroll deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/labourers/stats/summary")
+def get_labour_stats():
+    """Get labour statistics"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_labourers,
+                SUM(CASE WHEN status = 'Active' THEN 1 ELSE 0 END) as active_labourers,
+                SUM(CASE WHEN pay_type = 'Monthly_Salary' THEN 1 ELSE 0 END) as monthly_employees,
+                SUM(CASE WHEN pay_type = 'Daily_Wage' THEN 1 ELSE 0 END) as daily_workers
+            FROM labourers
         """)
         stats = cursor.fetchone()
         
