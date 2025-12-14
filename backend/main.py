@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from dotenv import load_dotenv
 from config.db import get_connection
+from config.init_db import init_db
 import re
 import os
 import shutil
@@ -11,6 +12,9 @@ import random
 import json
 
 load_dotenv()
+
+# Initialize database tables
+init_db()
 
 app = FastAPI()
 
