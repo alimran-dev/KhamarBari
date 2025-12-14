@@ -463,7 +463,6 @@ class ProductionPage(QtWidgets.QWidget):
             }}
             QFrame:hover {{
                 border: 1px solid {INPUT_BORDER};
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
             }}
         """)
         card.setMinimumHeight(140)

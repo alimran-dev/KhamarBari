@@ -1,4 +1,5 @@
 import sys
+import os
 from PyQt5 import QtCore, QtGui, QtWidgets
 from cattle_page import CattlePage
 from production_page import ProductionPage
@@ -11,6 +12,7 @@ from veterinary_page import VeterinaryPage
 from calendar_page import CalendarPage
 from notification_widget import NotificationWidget
 from support_page import SupportPage
+from dashboard_home import DashboardHome
 
 # --- Color Scheme from the Design ---
 BG_COLOR_DARK = "#588157"  # Sidebar Dark Olive Green
@@ -41,8 +43,10 @@ class DashboardPage(QtWidgets.QWidget):
         """Loads user data into the dashboard."""
         data = user_info.get("data", {})
         owner_name = data.get("owner_name", "User")
+        farm_name = data.get("farm_name", "Farm")
         self.user_email = data.get("email", "")
         self.user_id.setText(owner_name)
+        self.farm_id_label.setText(farm_name)
         
         # Set default profile picture
         self.set_default_profile_pic()
@@ -50,12 +54,63 @@ class DashboardPage(QtWidgets.QWidget):
         # Load user data into settings page
         self.settings_page.load_user_data(user_info)
         
+        # Set user email for cattle page
+        if hasattr(self, 'cattle_page'):
+            self.cattle_page.set_user_email(self.user_email)
+        
         # Initialize finance page with user email
         self.finance_page = FinancePage(self.user_email)
         
         # Add finance page to stack
         self.pages_stack.addWidget(self.finance_page)
+        
+        # Initialize dashboard home with user data
+        self.dashboard_home = DashboardHome(self.user_email, farm_name)
+        
+        # Connect Quick Action Signals
+        self.dashboard_home.action_income_expense.connect(self.go_to_income_expense)
+        self.dashboard_home.action_add_feed.connect(self.go_to_add_feed)
+        self.dashboard_home.action_add_cattle.connect(self.go_to_add_cattle)
+        self.dashboard_home.action_add_order.connect(self.go_to_add_order)
+        
+        # Replace the placeholder dashboard with the real one
+        old_dashboard = self.pages_stack.widget(0)
+        self.pages_stack.removeWidget(old_dashboard)
+        self.pages_stack.insertWidget(0, self.dashboard_home)
+        self.pages_stack.setCurrentWidget(self.dashboard_home)
     
+    def go_to_income_expense(self):
+        """Navigate to Finance page and open entry tab."""
+        self.pages_stack.setCurrentWidget(self.finance_page)
+        self.finance_page.switch_to_entry_tab()
+        self._update_sidebar_selection("Finance")
+
+    def go_to_add_feed(self):
+        """Navigate to Warehouse page and open add dialog."""
+        self.pages_stack.setCurrentWidget(self.warehouse_page)
+        self.warehouse_page.switch_to_manage_tab_and_open_add_dialog()
+        self._update_sidebar_selection("Warehouse")
+
+    def go_to_add_cattle(self):
+        """Navigate to Cattle page and open add tab."""
+        self.pages_stack.setCurrentWidget(self.cattle_page)
+        self.cattle_page.switch_to_add_tab()
+        self._update_sidebar_selection("Cattle")
+
+    def go_to_add_order(self):
+        """Navigate to Order page and open place order tab."""
+        self.pages_stack.setCurrentWidget(self.order_page)
+        self.order_page.switch_to_place_order_tab()
+        self._update_sidebar_selection("Order")
+        
+    def _update_sidebar_selection(self, page_name):
+        """Update the selected item in the sidebar."""
+        for i in range(self.menu_list.count()):
+            item = self.menu_list.item(i)
+            if item.text() == page_name:
+                self.menu_list.setCurrentItem(item)
+                break
+
     def set_default_profile_pic(self):
         """Set default profile picture in sidebar."""
         pixmap = QtGui.QPixmap(120, 120)
@@ -136,12 +191,17 @@ class DashboardPage(QtWidgets.QWidget):
             }
         """)
         
-        self.user_id = QtWidgets.QLabel("UserID")
+        self.user_id = QtWidgets.QLabel("OwnerName")
         self.user_id.setAlignment(QtCore.Qt.AlignCenter)
         self.user_id.setStyleSheet("color: white; font-size: 16pt; font-weight: bold; margin-top: 10px;")
+        
+        self.farm_id_label = QtWidgets.QLabel("FarmID")
+        self.farm_id_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.farm_id_label.setStyleSheet("color: white; font-size: 10pt; margin-top: 5px;")
 
         self.sidebar_layout.addWidget(self.profile_pic, alignment=QtCore.Qt.AlignCenter)
         self.sidebar_layout.addWidget(self.user_id)
+        self.sidebar_layout.addWidget(self.farm_id_label)
         self.sidebar_layout.addSpacing(30)
         
         # 2. Menu List (Scrollable)
@@ -187,7 +247,9 @@ class DashboardPage(QtWidgets.QWidget):
         ]
         
         # Icon base path
-        icon_base_path = "../backend/uploads/sidebar_icons/"
+        # Use absolute path relative to this file to ensure icons load correctly regardless of CWD
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_base_path = os.path.join(base_dir, "../backend/uploads/sidebar_icons/")
         icon_size = QtCore.QSize(20, 20)
         
         for item_data in menu_items:
@@ -294,10 +356,10 @@ class DashboardPage(QtWidgets.QWidget):
         # Stacked Widget for pages
         self.pages_stack = QtWidgets.QStackedWidget(self.main_body)
         
-        # Dashboard Home (Placeholder)
-        self.dashboard_home = QtWidgets.QLabel("Dashboard Content Area (Ready to be populated)")
-        self.dashboard_home.setAlignment(QtCore.Qt.AlignCenter)
-        self.dashboard_home.setStyleSheet("color: gray; font-size: 14pt; padding: 20px;")
+        # Dashboard Home (Placeholder - will be replaced with real dashboard after login)
+        dashboard_placeholder = QtWidgets.QLabel("Dashboard Content Area (Ready to be populated)")
+        dashboard_placeholder.setAlignment(QtCore.Qt.AlignCenter)
+        dashboard_placeholder.setStyleSheet("color: gray; font-size: 14pt; padding: 20px;")
         
         # Cattle Page
         self.cattle_page = CattlePage()
@@ -326,7 +388,7 @@ class DashboardPage(QtWidgets.QWidget):
         # Support Page
         self.support_page = SupportPage()
         
-        self.pages_stack.addWidget(self.dashboard_home)
+        self.pages_stack.addWidget(dashboard_placeholder)
         self.pages_stack.addWidget(self.cattle_page)
         self.pages_stack.addWidget(self.production_page)
         self.pages_stack.addWidget(self.order_page)

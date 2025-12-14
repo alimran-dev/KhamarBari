@@ -344,14 +344,18 @@ def delete_profile_photo(email: str):
 
 
 @app.get("/cattle")
-def get_all_cattle():
+def get_all_cattle(user_email: str = None):
     """Get all cattle from the cattles table"""
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
         # Fetch all cattle that are not archived
-        cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = FALSE OR is_archived IS NULL")
+        if user_email:
+            cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE (is_archived = FALSE OR is_archived IS NULL) AND user_email = %s", (user_email,))
+        else:
+            cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = FALSE OR is_archived IS NULL")
+            
         cattle_records = cursor.fetchall()
         
         cursor.close()
@@ -381,14 +385,18 @@ def get_all_cattle():
 
 
 @app.get("/cattle/archived")
-def get_archived_cattle():
+def get_archived_cattle(user_email: str = None):
     """Get all archived cattle from the cattles table"""
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
         # Fetch all cattle that are archived
-        cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = TRUE")
+        if user_email:
+            cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = TRUE AND user_email = %s", (user_email,))
+        else:
+            cursor.execute("SELECT Name, weight, tag_number, breed, current_weight, photo_path FROM cattles WHERE is_archived = TRUE")
+            
         cattle_records = cursor.fetchall()
         
         cursor.close()
@@ -420,6 +428,7 @@ def get_archived_cattle():
 @app.post("/cattle")
 def add_cattle(
     name: str = Form(...),
+    user_email: str = Form(...),
     breed: str = Form(None),
     purpose: str = Form(None),
     gender: str = Form(None),
@@ -466,13 +475,13 @@ def add_cattle(
         # Insert new cattle
         query = """
             INSERT INTO cattles (
-                Name, weight, tag_number, breed, purpose, gender, dob, entry_date, 
+                Name, user_email, weight, tag_number, breed, purpose, gender, dob, entry_date, 
                 initial_weight, current_weight, health_notes, seller_name, 
                 seller_address, seller_phone, photo_path, documents_path
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
-            name, current_weight, tag_number, breed, purpose, gender, dob, entry_date,
+            name, user_email, current_weight, tag_number, breed, purpose, gender, dob, entry_date,
             initial_weight, current_weight, health_notes, seller_name,
             seller_address, seller_phone, photo_path, documents_path
         )
@@ -3817,6 +3826,122 @@ def get_calendar_summary():
                 "type_breakdown": type_counts,
                 "upcoming_7_days": upcoming_count,
                 "overdue": overdue_count
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ===================== DASHBOARD ENDPOINTS =====================
+
+@app.get("/dashboard/stats/{email}")
+def get_dashboard_stats(email: str):
+    """Get comprehensive dashboard statistics"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Verify user exists
+        cursor.execute("SELECT farm_name FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        
+        if not user:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        farm_name = user[0]
+        
+        # Get total animals count
+        cursor.execute(
+            "SELECT COUNT(*) FROM cattles WHERE (is_archived = FALSE OR is_archived IS NULL) AND user_email = %s",
+            (email,)
+        )
+        total_animals = cursor.fetchone()[0]
+        
+        # Get today's production
+        from datetime import date, timedelta
+        today = date.today().strftime("%Y-%m-%d")
+        cursor.execute(
+            """SELECT SUM(p.quantity) as total 
+               FROM production_entries p
+               JOIN cattles c ON p.cattle_id = c.id
+               WHERE p.entry_date = %s AND c.user_email = %s""",
+            (today, email)
+        )
+        production_result = cursor.fetchone()
+        today_production = float(production_result[0]) if production_result and production_result[0] else 0
+        
+        # Get current month's income
+        current_month = date.today().strftime("%Y-%m")
+        cursor.execute(
+            """SELECT COALESCE(SUM(amount), 0) 
+            FROM financial_entries 
+            WHERE user_email = %s AND entry_type = 'income' 
+            AND DATE_FORMAT(date, '%%Y-%%m') = %s""",
+            (email, current_month)
+        )
+        monthly_income = float(cursor.fetchone()[0])
+        
+        # Get production trend for last 7 days
+        production_trend = []
+        for i in range(6, -1, -1):
+            target_date = (date.today() - timedelta(days=i)).strftime("%Y-%m-%d")
+            cursor.execute(
+                """SELECT COALESCE(SUM(p.quantity), 0) 
+                   FROM production_entries p
+                   JOIN cattles c ON p.cattle_id = c.id
+                   WHERE p.entry_date = %s AND c.user_email = %s""",
+                (target_date, email)
+            )
+            daily_prod = float(cursor.fetchone()[0])
+            production_trend.append({
+                "date": target_date,
+                "quantity": daily_prod
+            })
+        
+        # Get expense vs income for current month (by day)
+        cursor.execute(
+            """SELECT date, entry_type, SUM(amount) as total
+            FROM financial_entries
+            WHERE user_email = %s AND DATE_FORMAT(date, '%%Y-%%m') = %s
+            GROUP BY date, entry_type
+            ORDER BY date ASC""",
+            (email, current_month)
+        )
+        finance_data = cursor.fetchall()
+        
+        # Get farm health score (based on production and animal condition)
+        # For now, we'll calculate based on production consistency
+        cursor.execute(
+            """SELECT COUNT(DISTINCT p.entry_date) 
+               FROM production_entries p
+               JOIN cattles c ON p.cattle_id = c.id
+               WHERE p.entry_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) AND c.user_email = %s""",
+            (email,)
+        )
+        active_days = cursor.fetchone()[0]
+        health_score = min(100, int((active_days / 7) * 100))
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": {
+                "farm_name": farm_name,
+                "total_animals": total_animals,
+                "today_production": today_production,
+                "monthly_income": monthly_income,
+                "production_trend": production_trend,
+                "finance_data": [
+                    {
+                        "date": str(row[0]),
+                        "type": row[1],
+                        "amount": float(row[2])
+                    } for row in finance_data
+                ],
+                "farm_health": health_score
             }
         }
     except Exception as e:

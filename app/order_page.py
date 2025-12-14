@@ -478,6 +478,10 @@ class OrderPage(QtWidgets.QWidget):
         self.setup_ui()
         self.load_orders()
     
+    def switch_to_place_order_tab(self):
+        """Switch to the Place Order tab."""
+        self.switch_tab(1)
+
     def setup_ui(self):
         """Setup the main UI."""
         self.setStyleSheet("""

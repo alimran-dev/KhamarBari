@@ -56,6 +56,11 @@ class FinancePage(QtWidgets.QWidget):
         # Set initial state
         self._update_tab_styles(self.btn_entry)
     
+    def switch_to_entry_tab(self):
+        """Switch to the New Entry tab."""
+        self._update_tab_styles(self.btn_entry)
+        self.stack.setCurrentIndex(0)
+
     def _create_tab_button(self, text, position):
         """Create a styled tab button."""
         btn = QtWidgets.QPushButton(text)

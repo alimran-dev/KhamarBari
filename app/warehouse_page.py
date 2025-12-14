@@ -635,6 +635,14 @@ class WarehousePage(QtWidgets.QWidget):
         # Load initial data
         self.load_stock_data()
     
+    def switch_to_manage_tab_and_open_add_dialog(self):
+        """Switch to Manage tab and open Add Stock dialog."""
+        self._update_tab_styles(self.btn_manage)
+        self.stack.setCurrentIndex(1)
+        self.load_stock_data()
+        # Use QTimer to ensure the page is shown before opening dialog
+        QtCore.QTimer.singleShot(100, self._open_add_stock_dialog)
+
     def _create_tab_button(self, text, position):
         """Create a styled tab button."""
         btn = QtWidgets.QPushButton(text)

@@ -463,9 +463,12 @@ class CattlePage(QtWidgets.QWidget):
         }
     """
 
-    def __init__(self):
+    def __init__(self, user_email=None):
         super().__init__()
+        self.user_email = user_email
         self.medical_history = [] # Store history here
+        self.photo_path = None
+        self.docs_path = None
 
         
         # Main Layout
@@ -512,6 +515,20 @@ class CattlePage(QtWidgets.QWidget):
 
         # Set initial state
         self._update_tab_styles(self.btn_add)
+        
+        if self.user_email:
+            self.load_cattle_data()
+
+    def set_user_email(self, email):
+        self.user_email = email
+        # Reload data when user changes
+        self.load_cattle_data()
+        self.load_archived_cattle_data()
+
+    def switch_to_add_tab(self):
+        """Switch to the Add New Cattle tab."""
+        self._update_tab_styles(self.btn_add)
+        self.stack.setCurrentIndex(0)
 
     def _create_tab_button(self, text, position="center"):
         btn = QtWidgets.QPushButton(text)
@@ -828,6 +845,7 @@ class CattlePage(QtWidgets.QWidget):
         # Gather Data
         data = {
             "name": self.name_input.text(),
+            "user_email": self.user_email,
             "breed": self.breed_input.currentText(),
             "purpose": self.purpose_input.currentText(),
             "gender": self.gender_input.currentText(),
@@ -843,6 +861,10 @@ class CattlePage(QtWidgets.QWidget):
         }
         
         # Basic Validation
+        if not self.user_email:
+            QtWidgets.QMessageBox.warning(self, "Error", "User email not found. Please login again.")
+            return
+
         if not data["name"]:
             QtWidgets.QMessageBox.warning(self, "Validation Error", "Name is required.")
             return
@@ -933,7 +955,11 @@ class CattlePage(QtWidgets.QWidget):
                 widget.deleteLater()
         
         try:
-            response = requests.get("http://localhost:8000/cattle/archived")
+            url = "http://localhost:8000/cattle/archived"
+            params = {}
+            if self.user_email:
+                params["user_email"] = self.user_email
+            response = requests.get(url, params=params)
             if response.status_code == 200:
                 data = response.json().get("data", [])
                 
@@ -963,7 +989,11 @@ class CattlePage(QtWidgets.QWidget):
                 widget.deleteLater()
         
         try:
-            response = requests.get("http://localhost:8000/cattle")
+            url = "http://localhost:8000/cattle"
+            params = {}
+            if self.user_email:
+                params["user_email"] = self.user_email
+            response = requests.get(url, params=params)
             if response.status_code == 200:
                 data = response.json().get("data", [])
                 
@@ -1240,6 +1270,7 @@ class CattlePage(QtWidgets.QWidget):
         # Gather Data
         data = {
             "name": self.name_input.text(),
+            "user_email": self.user_email,
             "breed": self.breed_input.currentText(),
             "purpose": self.purpose_input.currentText(),
             "gender": self.gender_input.currentText(),
@@ -1255,6 +1286,10 @@ class CattlePage(QtWidgets.QWidget):
         }
         
         # Basic Validation
+        if not self.user_email:
+            QtWidgets.QMessageBox.warning(self, "Error", "User email not found. Please login again.")
+            return
+
         if not data["name"]:
             QtWidgets.QMessageBox.warning(self, "Validation Error", "Name is required.")
             return
@@ -1324,7 +1359,11 @@ class CattlePage(QtWidgets.QWidget):
                 widget.deleteLater()
         
         try:
-            response = requests.get("http://localhost:8000/cattle")
+            url = "http://localhost:8000/cattle"
+            params = {}
+            if self.user_email:
+                params["user_email"] = self.user_email
+            response = requests.get(url, params=params)
             if response.status_code == 200:
                 data = response.json().get("data", [])
                 
@@ -1601,6 +1640,7 @@ class CattlePage(QtWidgets.QWidget):
         # Gather Data
         data = {
             "name": self.name_input.text(),
+            "user_email": self.user_email,
             "breed": self.breed_input.currentText(),
             "purpose": self.purpose_input.currentText(),
             "gender": self.gender_input.currentText(),
@@ -1616,6 +1656,10 @@ class CattlePage(QtWidgets.QWidget):
         }
         
         # Basic Validation
+        if not self.user_email:
+            QtWidgets.QMessageBox.warning(self, "Error", "User email not found. Please login again.")
+            return
+
         if not data["name"]:
             QtWidgets.QMessageBox.warning(self, "Validation Error", "Name is required.")
             return
@@ -1685,7 +1729,11 @@ class CattlePage(QtWidgets.QWidget):
                 widget.deleteLater()
         
         try:
-            response = requests.get("http://localhost:8000/cattle")
+            url = "http://localhost:8000/cattle"
+            params = {}
+            if self.user_email:
+                params["user_email"] = self.user_email
+            response = requests.get(url, params=params)
             if response.status_code == 200:
                 data = response.json().get("data", [])
                 
@@ -1939,6 +1987,7 @@ class EditCattleDialog(QtWidgets.QDialog):
         # Gather Data
         updated_data = {
             "name": self.name_input.text(),
+            "user_email": self.user_email,
             "breed": self.breed_input.currentText(),
             "purpose": self.purpose_input.currentText(),
             "gender": self.gender_input.currentText(),
